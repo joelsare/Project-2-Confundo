@@ -8,15 +8,21 @@
 #include <unistd.h>
 #include <sstream> 
 #include <iostream>
+#include "header.h"
 
 int main(int argc, char *args[])
 {
+  const int MAX = 102400;
+  int CWND = 512;
+  int SS_THRESH = 10000;
   int counter = 0;
   int port;
   int new1;
   int val;
   int bytes_read;
-  char buf[20] = {0};
+  char buf[524] = {0};
+  char h[12];
+  char file[512];
   struct sockaddr_in addr;
 
   std::stringstream p(args[1]);
@@ -52,6 +58,8 @@ int main(int argc, char *args[])
 
   while(1)
   {
+    struct header a;
+
     memset(buf, '\0', sizeof(buf));      
     struct sockaddr_in clientAddr;
     socklen_t clientAddrSize = sizeof(clientAddr);
@@ -76,11 +84,27 @@ int main(int argc, char *args[])
       }
       else if (val == 0)
       {
-        printf("Client #%d : %s\n", counter, buf); 
+        memcpy(&a, buf, sizeof(a));
+        memcpy(file, buf + sizeof(h), sizeof(file));
+        
+        if (a.S == 1 && a.F == 0 && a.A == 0)
+        {
+          a.awknum = a.sequencenum + 1;
+          a.A = 1;
+          a.connid = counter;
+          a.sequencenum = 4321;
+        }
+        else
+        {
+          
+        }
+        memcpy(buf, &a, sizeof(a));
+        memcpy(buf + sizeof(a), file, sizeof(file));
+
         sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &clientAddr, clientAddrSize); 
 
-        counter++;
         close(new1);
+        counter++;
         break;
       }
     }
