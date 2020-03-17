@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sstream> 
 #include <iostream>
+#include <fstream>
 #include "header.h"
 
 int main(int argc, char *args[])
@@ -33,6 +34,9 @@ int main(int argc, char *args[])
     return 1;
   }
 
+  std::string dirName = args[2];
+  dirName = dirName.substr(1) + "/";
+
   // create a socket using UDP IP
   int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -55,6 +59,9 @@ int main(int argc, char *args[])
     perror("bind");
     return 2;
   }
+  
+  std::string destination;
+  std::ofstream fp;
 
   while(1)
   {
@@ -70,6 +77,8 @@ int main(int argc, char *args[])
     bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, ( struct sockaddr *) &clientAddr, &clientAddrSize); 
     if (bytes_read > 0)
     {
+      memcpy(&a, buf, sizeof(a));
+      memcpy(file, buf + sizeof(h), sizeof(file));
       val = fork();
       if (val == -1)
       {
@@ -84,27 +93,33 @@ int main(int argc, char *args[])
       }
       else if (val == 0)
       {
-        memcpy(&a, buf, sizeof(a));
-        memcpy(file, buf + sizeof(h), sizeof(file));
-        
         if (a.S == 1 && a.F == 0 && a.A == 0)
         {
+          printf("This should only appear once\n");
+          printf("%d %d %d %d %d\n", a.sequencenum, a.awknum, a.connid, CWND, SS_THRESH);
+          printf("Counter: %d\n", counter);
           a.awknum = a.sequencenum + 1;
           a.A = 1;
           a.connid = counter;
           a.sequencenum = 4321;
         }
-        else
+        else if (a.S == 0 && a.F == 0 && a.A == 0)
         {
-          
+          destination = dirName + std::to_string(counter) + ".file";
+          printf("File: %s\n",file);
+          fp.open(destination,std::ofstream::app);
+          for (int i; i < strlen(file); i++)
+          {
+            fp << file[i];
+          }
+          fp.close();
         }
+        counter++;
         memcpy(buf, &a, sizeof(a));
         memcpy(buf + sizeof(a), file, sizeof(file));
-
         sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &clientAddr, clientAddrSize); 
 
         close(new1);
-        counter++;
         break;
       }
     }

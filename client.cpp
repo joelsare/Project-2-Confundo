@@ -14,11 +14,13 @@
 #include <arpa/inet.h> 
 #include <netinet/in.h> 
 #include "header.h"
+#include <fstream>
 
 using namespace std; 
 
 int main(int argc, char *args[])
 {
+  char c;
   int CWND = 512;
   int SS_THRESH = 10000;
   struct header a;
@@ -48,8 +50,10 @@ int main(int argc, char *args[])
   char file[512] = "";
   strcpy(file, fileName);
 
-  FILE * fp;
-  fp = fopen(file, "r");
+
+  std::ifstream fp;
+  printf("file: %s\n", file);
+  fp.open(file);
 
   // create a socket using UDP IP
   int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -134,19 +138,35 @@ int main(int argc, char *args[])
 
   memcpy(buf, &a, sizeof(a));
   memcpy(buf + sizeof(a), file, sizeof(file));  
-  sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
+  //sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
 
   printf("SEND %d %d %d %d %d ", a.sequencenum, a.awknum, a.connid, CWND, SS_THRESH);
-  if(a.A == 1) printf("ACK ");
+  if(a.A == 1)printf("ACK ");
   if(a.S == 1) printf("SYN ");
   if(a.F == 1) printf("FIN");
   printf("\n");
 
-  if (strlen(file) > 0)
+  memset(file, '\0', sizeof(file));
+  a.A = 0;
+  int i = 0;
+
+  while (fp.peek() != EOF)
   {
-    printf("%lu\n", strlen(file));
+    if (i == 512)
+    {
+      i = 0;
+      break;
+    }
+    c = fp.get();
+    file[i++] = c;
   }
+  printf("file: %s\n",file);
+
+  memcpy(buf, &a, sizeof(a));
+  memcpy(buf + sizeof(a), file, sizeof(file));  
+  sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
   
+  fp.close();
   close(sockfd);
   return 0;
 }
