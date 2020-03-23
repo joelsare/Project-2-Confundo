@@ -18,6 +18,14 @@
 
 using namespace std; 
 
+void printHeader(string command ,header a, int C, int SS)
+{
+  printf("%s %d %d %d %d %d ", command.c_str(), a.sequencenum, a.awknum, a.connid, C, SS);
+  if(a.A == 1) printf("ACK ");
+  if(a.S == 1) printf("SYN ");
+  if(a.F == 1) printf("FIN");
+  printf("\n");}
+
 int main(int argc, char *args[])
 {
   char c;
@@ -50,10 +58,11 @@ int main(int argc, char *args[])
   char file[512] = "";
   strcpy(file, fileName);
 
-
-  std::ifstream fp;
-  printf("file: %s\n", file);
-  fp.open(file);
+  std::ifstream in(file);
+  std::string contents((std::istreambuf_iterator<char>(in)), 
+  std::istreambuf_iterator<char>());
+  in.close();
+  int fSize = strlen(contents.c_str());
 
   // create a socket using UDP IP
   int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -110,12 +119,8 @@ int main(int argc, char *args[])
   memcpy(buf, &a, sizeof(a));
   memcpy(buf + sizeof(a), file, sizeof(file));
   sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
-  printf("SEND %d %d %d %d %d ", a.sequencenum, a.awknum, a.connid, CWND, SS_THRESH);
-      if(a.A == 1) printf("ACK ");
-      if(a.S == 1) printf("SYN ");
-      if(a.F == 1) printf("FIN");
-      printf("\n");
-      
+  printHeader("SEND", a, CWND, SS_THRESH);
+
 
   while (1)
   {
@@ -123,11 +128,7 @@ int main(int argc, char *args[])
     if (bytes_read > 0)
     {
       memcpy(&a, buf, sizeof(a));
-      printf("RECV %d %d %d %d %d ", a.sequencenum, a.awknum, a.connid, CWND, SS_THRESH);
-      if(a.A == 1) printf("ACK ");
-      if(a.S == 1) printf("SYN ");
-      if(a.F == 1) printf("FIN");
-      printf("\n");
+      printHeader("RECV", a, CWND, SS_THRESH);
       break;
     }
   }
@@ -140,33 +141,38 @@ int main(int argc, char *args[])
   memcpy(buf + sizeof(a), file, sizeof(file));  
   //sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
 
-  printf("SEND %d %d %d %d %d ", a.sequencenum, a.awknum, a.connid, CWND, SS_THRESH);
-  if(a.A == 1)printf("ACK ");
-  if(a.S == 1) printf("SYN ");
-  if(a.F == 1) printf("FIN");
-  printf("\n");
+  printHeader("SEND", a, CWND, SS_THRESH);
 
   memset(file, '\0', sizeof(file));
   a.A = 0;
   int i = 0;
+  int curByte = 0;
 
-  while (fp.peek() != EOF)
+  for(char& ch : contents)
   {
-    if (i == 512)
+    curByte++;
+    file[i++] = ch;
+    if (i == 512 || curByte == fSize)
     {
       i = 0;
-      break;
+      memcpy(buf, &a, sizeof(a));
+      memcpy(buf + sizeof(a), file, sizeof(file));  
+      sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
+      printHeader("SEND", a, CWND, SS_THRESH);
+        while (1)
+        {
+          int bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *) &serverAddr, &len); 
+          if (bytes_read > 0)
+          {
+            bytes_read = 0;
+            memcpy(&a, buf, sizeof(a));
+            printHeader("RECV", a, CWND, SS_THRESH);
+            break;
+          }
+        }
+      memset(file, '\0', sizeof(file));
     }
-    c = fp.get();
-    file[i++] = c;
-  }
-  printf("file: %s\n",file);
-
-  memcpy(buf, &a, sizeof(a));
-  memcpy(buf + sizeof(a), file, sizeof(file));  
-  sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
-  
-  fp.close();
+  }  
   close(sockfd);
   return 0;
 }

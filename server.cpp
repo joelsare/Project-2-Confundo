@@ -9,7 +9,11 @@
 #include <sstream> 
 #include <iostream>
 #include <fstream>
+#include <sys/ioctl.h>
 #include "header.h"
+#include <unistd.h>
+#include <fcntl.h>
+
 
 char h[12];
 char file[512];
@@ -21,14 +25,17 @@ std::string dirName;
 std::string destination;
 int sockfd;
 struct sockaddr_in clientAddr;
+struct timeval Timeout;      
+int count = 0;
+fd_set Write, Err;
 
 void *connection_handler(void *socket_desc)
 {
   int sock = *(int*)socket_desc;
   std::ofstream fp;
-  static int count = 0;
   memcpy(&a, buf, sizeof(a));
   memcpy(&file, buf + sizeof(a), sizeof(file));
+  printf("File: %s\n", file);
 
   if (a.S == 1 && a.F == 0 && a.A == 0)
   {
@@ -40,8 +47,6 @@ void *connection_handler(void *socket_desc)
   else if (a.S == 0 && a.F == 0 && a.A == 0)
   {
     destination = dirName + std::to_string(count) + ".file";
-    printf("File: %s\n",file);
-    printf("File length: %lu\n", strlen(file));
     int len = strlen(file);
     if(len > 512)
       len = 512;
@@ -63,12 +68,13 @@ void *connection_handler(void *socket_desc)
 int main(int argc, char *args[])
 {
   const int MAX = 102400;
-  int counter = 0;
   int port;
   int new1;
   int val;
   int bytes_read;
   struct sockaddr_in addr;
+  Timeout.tv_sec = 5;
+  Timeout.tv_usec = 0;
 
   std::stringstream p(args[1]);
   p >> port;
@@ -83,6 +89,8 @@ int main(int argc, char *args[])
 
   // create a socket using UDP IP
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+  fcntl(sockfd, F_SETFL, O_NONBLOCK);
 
   // allow others to reuse the address
   int yes = 1;
@@ -106,18 +114,38 @@ int main(int argc, char *args[])
   
   pthread_t thread_id;
   socklen_t clientAddrSize = sizeof(clientAddr);
-  memset(buf, '\0', sizeof(buf));      
+  memset(buf, '\0', sizeof(buf));
+
+  int maxTime = 10;      
+  int curTime = 0;
+  
   while((bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, ( struct sockaddr *) &clientAddr, &clientAddrSize)))
   {
     if (bytes_read > 0)
     {
       bytes_read = 0;
+      curTime = 0;
       if( pthread_create( &thread_id , NULL ,  connection_handler , (void*) &new1) < 0)
       {
         puts("Could not create thread");
         pthread_join( thread_id , NULL);
       }
     }
+    else
+    {
+      usleep(1000000);
+      curTime++;
+      if(curTime == maxTime)
+      {
+        std::ofstream fp;
+        destination = dirName + std::to_string(count) + ".file";
+        fp.open(destination);
+        fp << "ERROR";
+        fp.close();
+        curTime = 0;
+      }
+    }
+    
   }
   close(new1);
   return 0;
