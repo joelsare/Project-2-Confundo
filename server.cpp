@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-
+#include <map>
 
 char h[12];
 char file[512];
@@ -30,6 +30,19 @@ struct timeval Timeout;
 int count = 0;
 fd_set Write, Err;
 
+//Connection
+typedef struct
+{
+	FILE* fp;
+	uint32_t client_seq_num;
+	uint32_t server_seq_num;
+	bool needs_ack;
+	bool is_closing;
+} Connection;
+
+std::map<uint16_t, Connection> connections;
+
+
 void *connection_handler(void *socket_desc)
 {
   int sock = *(int*)socket_desc;
@@ -38,25 +51,47 @@ void *connection_handler(void *socket_desc)
   memcpy(&file, buf + sizeof(a), sizeof(file));
   printf("File: %s\n", file);
 
-  if (a.S == 1 && a.F == 0 && a.A == 0)
+  uint16_t conn_id = a.connid;
+  auto it = connections.find(conn_id);
+
+  if (it == connections.end())
   {
-    a.awknum = a.sequencenum + 1;
-    a.A = 1;
-    a.connid = count++;
-    a.sequencenum = 4321;
-  }
-  else if (a.S == 0 && a.F == 0 && a.A == 0)
-  {
-    destination = dirName + std::to_string(count) + ".file";
-    int len = strlen(file);
-    if(len > 512)
-      len = 512;
-    fp.open(destination,std::ofstream::app);
-    for (int i = 0; i < len; i++)
+    if (a.S == 1 && a.F == 0 && a.A == 0)
     {
-      fp << file[i];
+      a.awknum = a.sequencenum + 1;
+      a.A = 1;
+      a.connid = ++count;
+      a.sequencenum = 4321;
+      Connection c = (Connection) {.fp = nullptr, .client_seq_num = a.sequencenum, .server_seq_num = 4321, .needs_ack = true};
+      connections[count] = c;
     }
-    fp.close();
+  }
+  else
+  {
+    if (a.S == 0 && a.F == 0 && a.A == 0)
+    {
+      a.A = 1;
+      destination = dirName + std::to_string(count) + ".file";
+      int len = strlen(file);
+      if(len > 512)
+        len = 512;
+      fp.open(destination,std::ofstream::app);
+      for (int i = 0; i < len; i++)
+      {
+        fp << file[i];
+      }
+      fp.close();
+      it->second.server_seq_num = a.awknum;
+      printf("Seq num: %d\n", a.sequencenum);
+      a.awknum = a.sequencenum + len;
+      a.sequencenum = 4322;
+    }
+    else if (a.S == 0 && a.F == 1 && a.A == 0)
+    {
+      a.awknum = a.sequencenum + 1;
+      a.sequencenum = 4322;
+      a.A = 1;
+    }
   }
   memcpy(buf, &a, sizeof(a));
   memcpy(buf + sizeof(a), file, sizeof(file));
@@ -65,6 +100,7 @@ void *connection_handler(void *socket_desc)
   close(sock);
   return 0;
 }
+
 
 int main(int argc, char *args[])
 {
@@ -89,10 +125,6 @@ int main(int argc, char *args[])
   dirName = dirName.substr(1) + "/";
   const char * dName = dirName.c_str();
   const int dir_err = mkdir(dName, 0777);
-  if (-1 == dir_err)
-  {
-      printf("Error creating directory!n");
-  }
 
   // create a socket using UDP IP
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -157,29 +189,49 @@ int main(int argc, char *args[])
   close(new1);
   return 0;
 }
+
 /*
-    //new1 = accept(sockfd, (struct sockaddr*)&clientAddr, &clientAddrSize);
-    //char ipstr[INET_ADDRSTRLEN] = {'\0'};
-    //inet_ntop(clientAddr.sin_family, &clientAddr.sin_addr, ipstr, sizeof(ipstr));
-    bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, ( struct sockaddr *) &clientAddr, &clientAddrSize); 
-    if (bytes_read > 0)
+   void *connection_handler(void *socket_desc)
+{
+  int sock = *(int*)socket_desc;
+  std::ofstream fp;
+  memcpy(&a, buf, sizeof(a));
+  memcpy(&file, buf + sizeof(a), sizeof(file));
+  printf("File: %s\n", file);
+
+  uint16_t conn_id = a.connid;
+  auto it = connections.find(conn_id);
+
+  if (a.S == 1 && a.F == 0 && a.A == 0)
+  {
+    a.awknum = a.sequencenum + 1;
+    a.A = 1;
+    a.connid = ++count;
+    a.sequencenum = 4321;
+  }
+  else if (a.S == 0 && a.F == 0 && a.A == 0)
+  {
+    a.A = 1;
+    destination = dirName + std::to_string(count) + ".file";
+    int len = strlen(file);
+    int localawknum = a.awknum;
+    printf("local awk num: %d\n", localawknum);
+    a.awknum = a.sequencenum + len;
+    a.sequencenum = localawknum;
+    if(len > 512)
+      len = 512;
+    fp.open(destination,std::ofstream::app);
+    for (int i = 0; i < len; i++)
     {
-      val = fork();
-      if (val == -1)
-      {
-        close(new1);
-        continue;
-      }
-      else if (val > 0)
-      {
-        close(new1);
-        counter++;
-        continue;
-      }
-      else if (val == 0)
-      {
-      
-        break;
-      }
+      fp << file[i];
     }
-    */
+    fp.close();
+  }
+  memcpy(buf, &a, sizeof(a));
+  memcpy(buf + sizeof(a), file, sizeof(file));
+  sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &clientAddr, sizeof(clientAddr)); 
+
+  close(sock);
+  return 0;
+}
+*/

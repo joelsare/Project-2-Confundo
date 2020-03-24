@@ -132,7 +132,8 @@ int main(int argc, char *args[])
       break;
     }
   }
-  int sequencenum = a.sequencenum;
+  int sequencenum;
+  sequencenum = a.sequencenum;
   a.sequencenum = a.awknum;
   a.awknum = sequencenum + 1;
   a.S = 0;
@@ -145,6 +146,7 @@ int main(int argc, char *args[])
 
   memset(file, '\0', sizeof(file));
   a.A = 0;
+  a.awknum = 0;
   int i = 0;
   int curByte = 0;
 
@@ -155,6 +157,7 @@ int main(int argc, char *args[])
     if (i == 512 || curByte == fSize)
     {
       i = 0;
+      a.awknum = 0;
       memcpy(buf, &a, sizeof(a));
       memcpy(buf + sizeof(a), file, sizeof(file));  
       sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
@@ -164,15 +167,68 @@ int main(int argc, char *args[])
           int bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *) &serverAddr, &len); 
           if (bytes_read > 0)
           {
-            bytes_read = 0;
             memcpy(&a, buf, sizeof(a));
+            bytes_read = 0;
+            a.A = 1;
             printHeader("RECV", a, CWND, SS_THRESH);
+            a.sequencenum = a.awknum;
+            if(CWND < SS_THRESH)
+            {
+              CWND += 512;
+            }
+            else if(CWND >= SS_THRESH)
+            {
+              CWND += (512 * 512) / CWND;
+            }
             break;
           }
+        }
+        if(curByte == fSize)
+        {
+          break;
         }
       memset(file, '\0', sizeof(file));
     }
   }  
+
+  a.awknum = 0;
+  a.F = 1;
+  a.A = 0;
+  memcpy(buf, &a, sizeof(a));
+  memcpy(buf + sizeof(a), file, sizeof(file));  
+  sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
+  printHeader("SEND", a, CWND, SS_THRESH);
+  while (1)
+  {
+    int bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *) &serverAddr, &len); 
+    if (bytes_read > 0)
+    {
+      memcpy(&a, buf, sizeof(a));
+      bytes_read = 0;
+      printHeader("RECV", a, CWND, SS_THRESH);
+      break;
+    }
+  }
+
+  a.F = 0;
+  sequencenum = a.sequencenum;
+  a.sequencenum = a.awknum;
+  a.awknum = sequencenum + 1;
+  memcpy(buf, &a, sizeof(a));
+  memcpy(buf + sizeof(a), file, sizeof(file));  
+  sendto(sockfd, buf, sizeof(buf), MSG_SEND, (const struct sockaddr *) &serverAddr, sizeof(serverAddr)); 
+  printHeader("SEND", a, CWND, SS_THRESH);
+  while (1)
+  {
+    int bytes_read = recvfrom(sockfd, buf, sizeof(buf), MSG_DONTWAIT, (struct sockaddr *) &serverAddr, &len); 
+    if (bytes_read > 0)
+    {
+      memcpy(&a, buf, sizeof(a));
+      bytes_read = 0;
+      break;
+    }
+  }
+
   close(sockfd);
   return 0;
 }
