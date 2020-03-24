@@ -13,6 +13,7 @@
 #include "header.h"
 #include <unistd.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 
 char h[12];
@@ -86,6 +87,12 @@ int main(int argc, char *args[])
 
   dirName = args[2];
   dirName = dirName.substr(1) + "/";
+  const char * dName = dirName.c_str();
+  const int dir_err = mkdir(dName, 0777);
+  if (-1 == dir_err)
+  {
+      printf("Error creating directory!n");
+  }
 
   // create a socket using UDP IP
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
